@@ -102,7 +102,7 @@ function Chat() {
         <div>
           <h1 className="text-xl font-bold">Welcome {user?.name} 👋</h1>
 
-          <p className="text-sm text-gray-300">AI Digital Twin</p>
+          <p className="text-sm text-gray-300">AI Digital Twin 🚀</p>
         </div>
 
         <button onClick={logout} className="bg-red-500 px-4 py-2 rounded">
@@ -131,7 +131,6 @@ function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
-
       {/* INPUT AREA */}
       <div className="p-4 bg-white flex gap-2">
         <input
@@ -157,6 +156,5 @@ function Chat() {
     </div>
   );
 }
-
 
 export default Chat;
