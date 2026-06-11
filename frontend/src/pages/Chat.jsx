@@ -48,6 +48,8 @@ function Chat() {
 
   const [input, setInput] = useState("");
 
+  const [loading, setLoading] = useState(false);
+
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -69,6 +71,7 @@ function Chat() {
     ]);
 
     setInput("");
+    setLoading(true);
 
     try {
       const response = await fetch("http://localhost:3000/chat", {
@@ -90,8 +93,10 @@ function Chat() {
           text: data.reply,
         },
       ]);
+      setLoading(false);
     } catch (error) {
       console.log(error);
+      setLoading(false);
     }
   };
 
@@ -128,6 +133,14 @@ function Chat() {
             </span>
           </div>
         ))}
+
+        {loading && (
+          <div className="mb-3 text-left">
+            <span className="bg-white px-4 py-2 rounded shadow inline-block">
+              AI is thinking...
+            </span>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
