@@ -35,7 +35,13 @@ mongoose
 
 const chatSchema = new mongoose.Schema(
   {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
     message: String,
+
     reply: String,
   },
   { timestamps: true },
@@ -49,7 +55,13 @@ const Chat = mongoose.model("Chat", chatSchema);
 
 const memorySchema = new mongoose.Schema(
   {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
     key: String,
+
     value: [String],
   },
   { timestamps: true },

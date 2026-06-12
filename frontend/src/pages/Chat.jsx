@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import TypingIndicator from "../components/TypingIndicator";
 
 function Chat() {
   const navigate = useNavigate();
@@ -116,36 +117,33 @@ function Chat() {
       </div>
 
       {/* CHAT AREA */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`mb-3 ${
-              msg.sender === "user" ? "text-right" : "text-left"
+            className={`flex mb-3 ${
+              msg.sender === "user" ? "justify-end" : "justify-start"
             }`}
           >
-            <span
-              className={`px-4 py-2 rounded shadow inline-block ${
-                msg.sender === "user" ? "bg-black text-white" : "bg-white"
+            <div
+              className={`max-w-[75%] px-4 py-3 rounded-2xl shadow break-words ${
+                msg.sender === "user"
+                  ? "bg-black text-white"
+                  : "bg-white text-gray-800"
               }`}
             >
               {msg.text}
-            </span>
+            </div>
           </div>
         ))}
 
-        {loading && (
-          <div className="mb-3 text-left">
-            <span className="bg-white px-4 py-2 rounded shadow inline-block">
-              AI is thinking...
-            </span>
-          </div>
-        )}
+        {loading && <TypingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 
       {/* INPUT AREA */}
-      <div className="p-4 bg-white flex gap-2">
+      {/* INPUT AREA */}
+      <div className="p-4 bg-white border-t flex gap-3">
         <input
           type="text"
           placeholder="Type a message..."
@@ -156,14 +154,17 @@ function Chat() {
               sendMessage();
             }
           }}
-          className="flex-1 border rounded p-3"
+          className="flex-1 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-black"
         />
 
         <button
           onClick={sendMessage}
-          className="bg-black text-white px-6 rounded"
+          disabled={loading}
+          className={`px-6 rounded-xl text-white ${
+            loading ? "bg-gray-400 cursor-not-allowed" : "bg-black"
+          }`}
         >
-          Send
+          {loading ? "Thinking..." : "Send"}
         </button>
       </div>
     </div>
