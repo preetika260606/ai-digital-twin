@@ -7,6 +7,11 @@ Built step-by-step using:
 * Node.js
 * Express.js
 * MongoDB (Mongoose)
+* React.js
+* Vite
+* Tailwind CSS
+* JWT
+* OpenAI API
 
 ---
 
@@ -17,6 +22,12 @@ Built step-by-step using:
 * Remembers user name
 * Remembers user preferences (likes)
 * Context-based replies
+* User Signup & Login
+* JWT Authentication
+* Protected Routes
+* Chat History
+* Typing Indicator
+* OpenAI Integration
 
 ---
 
@@ -133,11 +144,57 @@ node server.js
 ## 🚀 Future Improvements
 
 * Multiple memory (array support)
-* Real AI integration (OpenAI)
+* User-specific memory
+* Retrieval Augmented Generation (RAG)
+* File upload support
+* Vector database integration
+* AI Digital Twin personality training
 * Chat history context
 * Frontend UI
 
 ---
+
+## Architecture
+
+User
+  ↓
+Frontend (React)
+  ↓
+Express Server
+  ↓
+MongoDB
+
+---
+
+## Project Structure
+
+ai-digital-twin/
+│
+├── backend/
+│   ├── models/
+│   ├── routes/
+│   ├── controllers/
+│   └── server.js
+│
+├── frontend/
+│   ├── src/
+│   └── public/
+│
+└── README.md
+
+---
+
+## Screenshots
+
+### Chat Interface
+
+
+![Chat UI](./screenshots/chat-ui.png)
+
+### Login
+
+
+![Chat UI](./screenshots/LoginPage.png)
 
 ## 👩‍💻 Author
 

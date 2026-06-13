@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const auth = require("./middleware/auth");
 const User = require("./models/User");
 
 //backend server
