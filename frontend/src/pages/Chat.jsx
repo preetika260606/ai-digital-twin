@@ -23,8 +23,13 @@ function Chat() {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch("http://localhost:3000/history");
+      const token = localStorage.getItem("token");
 
+      const response = await fetch("http://localhost:3000/history", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       const data = await response.json();
 
       const formattedMessages = [];
@@ -75,10 +80,13 @@ function Chat() {
     setLoading(true);
 
     try {
+      const token = localStorage.getItem("token");
+      console.log("Frontend Token:", token);
       const response = await fetch("http://localhost:3000/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           message: userMessage,

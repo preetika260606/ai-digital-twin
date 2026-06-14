@@ -82,8 +82,19 @@ app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message;
 
-    let aiReply = "Hello from AI";
+    const authHeader = req.header("Authorization");
 
+    let userId = null;
+
+    if (authHeader) {
+      const token = authHeader.split(" ")[1];
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      userId = decoded.userId;
+    }
+
+    let aiReply = "Hello from AI";
     // STORE NAME
     if (/my name is/i.test(userMessage)) {
       const parts = userMessage.split(/my name is/i);
@@ -92,11 +103,19 @@ app.post("/chat", async (req, res) => {
         const name = parts[1].trim();
 
         await Memory.findOneAndUpdate(
-          { key: "name" },
-          { value: [name] },
-          { upsert: true, returnDocument: "after" },
+          {
+            userId,
+            key: "name",
+          },
+          {
+            userId,
+            value: [name],
+          },
+          {
+            upsert: true,
+            returnDocument: "after",
+          },
         );
-
         aiReply = `Nice to meet you, ${name}!`;
       }
     }
@@ -108,7 +127,10 @@ app.post("/chat", async (req, res) => {
       if (match && match[1]) {
         const like = match[1].trim();
 
-        let existingLikes = await Memory.findOne({ key: "like" });
+        let existingLikes = await Memory.findOne({
+          userId,
+          key: "like",
+        });
 
         if (!existingLikes) {
           existingLikes = new Memory({
@@ -130,8 +152,15 @@ app.post("/chat", async (req, res) => {
     // USE MEMORY
     // USE MEMORY + OPENAI
     else {
-      const savedName = await Memory.findOne({ key: "name" });
-      const savedLike = await Memory.findOne({ key: "like" });
+      const savedName = await Memory.findOne({
+        userId,
+        key: "name",
+      });
+
+      const savedLike = await Memory.findOne({
+        userId,
+        key: "like",
+      });
 
       const memoryContext = `
 User name: ${savedName?.value?.[0] || ""}
@@ -174,6 +203,7 @@ ${memoryContext}
 
     // SAVE CHAT
     const chat = new Chat({
+      userId,
       message: userMessage,
       reply: aiReply,
     });
