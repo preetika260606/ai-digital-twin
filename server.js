@@ -6,7 +6,7 @@ const User = require("./models/User");
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
-const OpenAI = require("openai");
+const { GoogleGenAI } = require("@google/genai");
 const jwt = require("jsonwebtoken");
 
 const app = express();
@@ -14,8 +14,8 @@ const PORT = 3000;
 
 const cors = require("cors");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
 app.use(express.json());
@@ -27,8 +27,12 @@ app.use(cors());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
+  .then(() => {
+    console.log("MongoDB Connected");
+  })
+  .catch((err) => {
+    console.log("MongoDB Connection Error:", err.message);
+  });
 
 /* =========================
    CHAT SCHEMA
@@ -78,130 +82,380 @@ app.get("/", (req, res) => {
   res.send("Server working");
 });
 
-app.post("/chat", async (req, res) => {
+// =========================
+// GET ALL MEMORIES
+// =========================
+
+app.get("/memories", auth, async (req, res) => {
+  try {
+    const memories = await Memory.find({
+      userId: req.user.userId,
+    }).sort({ createdAt: -1 });
+
+    res.json(memories);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Failed to fetch memories",
+    });
+  }
+});
+app.delete("/memories/:id", auth, async (req, res) => {
+  try {
+    const memory = await Memory.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.userId,
+    });
+
+    if (!memory) {
+      return res.status(404).json({
+        error: "Memory not found",
+      });
+    }
+
+    res.json({
+      message: "Memory deleted successfully",
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Failed to delete memory",
+    });
+  }
+});
+app.delete("/memories/:id", auth, async (req, res) => {
+  try {
+    const memory = await Memory.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.userId,
+    });
+
+    if (!memory) {
+      return res.status(404).json({
+        error: "Memory not found",
+      });
+    }
+
+    res.json({
+      message: "Memory deleted successfully",
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Failed to delete memory",
+    });
+  }
+});
+
+app.put("/memories/:id", auth, async (req, res) => {
+  try {
+    const { value } = req.body;
+
+    if (!value || !Array.isArray(value)) {
+      return res.status(400).json({
+        error: "Memory value must be an array",
+      });
+    }
+
+    const memory = await Memory.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        userId: req.user.userId,
+      },
+      {
+        value: value,
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!memory) {
+      return res.status(404).json({
+        error: "Memory not found",
+      });
+    }
+
+    res.json({
+      message: "Memory updated successfully",
+      memory,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Failed to update memory",
+    });
+  }
+});
+
+app.post("/chat", auth, async (req, res) => {
   try {
     const userMessage = req.body.message;
+    const userId = req.user.userId;
 
-    const authHeader = req.header("Authorization");
+    // =========================
+    // GET CHAT HISTORY
+    // =========================
 
-    let userId = null;
+    const previousChats = await Chat.find({
+      userId,
+    })
+      .sort({ createdAt: -1 })
+      .limit(10);
 
-    if (authHeader) {
-      const token = authHeader.split(" ")[1];
+    const chatHistory = previousChats
+      .reverse()
+      .map((chat) => `User: ${chat.message}\nAI: ${chat.reply}`)
+      .join("\n");
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let aiReply = "";
 
-      userId = decoded.userId;
-    }
+    // =========================
+    // SHOW ALL SAVED MEMORIES
+    // =========================
 
-    let aiReply = "Hello from AI";
-    // STORE NAME
-    if (/my name is/i.test(userMessage)) {
-      const parts = userMessage.split(/my name is/i);
+    if (/what do (you|u) know about me/i.test(userMessage)) {
+      const memories = await Memory.find({
+        userId,
+      });
 
-      if (parts.length > 1) {
-        const name = parts[1].trim();
+      if (memories.length === 0) {
+        aiReply =
+          "I don't know much about you yet. Tell me more about yourself! 😊";
+      } else {
+        let memoryText = "Here's what I know about you:\n\n";
 
-        await Memory.findOneAndUpdate(
-          {
-            userId,
-            key: "name",
-          },
-          {
-            userId,
-            value: [name],
-          },
-          {
-            upsert: true,
-            returnDocument: "after",
-          },
-        );
-        aiReply = `Nice to meet you, ${name}!`;
-      }
-    }
+        memories.forEach((memory) => {
+          const values = memory.value.join(", ");
 
-    // STORE LIKES
-    else if (/i like (.+)/i.test(userMessage)) {
-      const match = userMessage.match(/i like (.+)/i);
-
-      if (match && match[1]) {
-        const like = match[1].trim();
-
-        let existingLikes = await Memory.findOne({
-          userId,
-          key: "like",
+          if (memory.key === "name") {
+            memoryText += `• Your name is ${values}\n`;
+          } else {
+            memoryText += `• ${memory.key}: ${values}\n`;
+          }
         });
 
-        if (!existingLikes) {
-          existingLikes = new Memory({
-            key: "like",
-            value: [like],
+        aiReply = memoryText;
+      }
+    } else {
+      // =========================
+      // LOAD EXISTING MEMORIES
+      // =========================
+
+      const memories = await Memory.find({
+        userId,
+      });
+
+      const memoryContext = memories
+        .map((memory) => `${memory.key}: ${memory.value.join(", ")}`)
+        .join("\n");
+
+      let interaction;
+      let lastError;
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          interaction = await ai.interactions.create({
+            model: "gemini-3.6-flash",
+
+            input: `
+You are an AI Digital Twin.
+
+Your personality:
+- Be friendly, supportive, and natural.
+- Keep responses clear and easy to understand.
+- Adapt your response to the user's communication style.
+- Be encouraging when helping with learning or coding.
+- Do not sound overly formal or robotic.
+- Do not pretend to be the user.
+- Never claim to have experiences or actions that you do not actually have.
+
+You have two tasks:
+
+1. Respond naturally and helpfully to the user's message.
+2. Extract important long-term personal information from the user's message.
+
+Here is what you already know about the user:
+
+${memoryContext}
+
+Recent conversation history:
+
+${chatHistory}
+
+Use this conversation history to understand references and maintain continuity.
+
+Important:
+- Do not repeat questions the user has already answered.
+- Use previously saved memories naturally when relevant.
+- If the user corrects previously known information, prefer the newest information.
+- Do not mention that you are reading a database or memory system.
+- Respond as the user's AI Digital Twin.
+
+Current user message:
+
+${userMessage}
+
+Return ONLY valid JSON in this format:
+
+{
+  "reply": "your response to the user",
+  "memories": [
+    {
+      "key": "name",
+      "value": "Preetika"
+    },
+    {
+      "key": "location",
+      "value": "Kanpur"
+    }
+  ]
+}
+
+If there is no important personal information to remember:
+
+{
+  "reply": "your response to the user",
+  "memories": []
+}
+
+Rules:
+
+- Reply naturally like a friendly AI assistant.
+- Only remember long-term useful personal information.
+- Do not remember temporary information, questions, greetings, or general statements.
+- Remember facts about the user's identity, preferences, education, location, skills, hobbies, goals, or other long-term interests.
+- If the user corrects previously known information, return the corrected value.
+- Do not create a memory just because the user mentioned a topic.
+- Use lowercase snake_case for memory keys.
+- Keep memory values short and factual.
+`,
+
+            response_format: {
+              type: "text",
+              mime_type: "application/json",
+              schema: {
+                type: "object",
+                properties: {
+                  reply: {
+                    type: "string",
+                  },
+                  memories: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        key: {
+                          type: "string",
+                        },
+                        value: {
+                          type: "string",
+                        },
+                      },
+                      required: ["key", "value"],
+                    },
+                  },
+                },
+                required: ["reply", "memories"],
+              },
+            },
           });
-        } else {
-          if (!existingLikes.value.includes(like)) {
-            existingLikes.value.push(like);
+
+          const aiData = JSON.parse(interaction.output_text);
+
+          aiReply = aiData.reply;
+
+          // Save memory if Gemini found something important
+          if (aiData.memories && aiData.memories.length > 0) {
+            const allowedMemoryKeys = [
+              "name",
+              "location",
+              "education",
+              "skills",
+              "hobbies",
+              "favorite_food",
+              "goals",
+              "interests",
+            ];
+
+            for (const memory of aiData.memories) {
+              const key = memory.key?.toLowerCase().trim();
+              const value = memory.value?.trim();
+
+              if (!key || !value) continue;
+
+              if (!allowedMemoryKeys.includes(key)) {
+                console.log("Memory rejected:", key);
+                continue;
+              }
+
+              let existingMemory = await Memory.findOne({
+                userId,
+                key,
+              });
+
+              const replaceKeys = [
+                "name",
+                "location",
+                "education",
+                "favorite_food",
+              ];
+
+              if (!existingMemory) {
+                existingMemory = new Memory({
+                  userId,
+                  key,
+                  value: [value],
+                });
+              } else {
+                if (replaceKeys.includes(key)) {
+                  existingMemory.value = [value];
+                } else {
+                  if (!existingMemory.value.includes(value)) {
+                    existingMemory.value.push(value);
+                  }
+                }
+              }
+
+              await existingMemory.save();
+
+              console.log("Memory saved/updated:", key, value);
+            }
+          }
+
+          // Gemini succeeded, so stop retrying
+          break;
+        } catch (error) {
+          lastError = error;
+
+          console.log(`Gemini attempt ${attempt} failed:`, error.message);
+
+          // Do not retry quota errors
+          if (error.status === 429 || error.statusCode === 429) {
+            console.log("Gemini quota exceeded. Stopping retries.");
+            break;
+          }
+
+          // Retry temporary errors
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
           }
         }
+      }
 
-        await existingLikes.save();
-
-        aiReply = `Got it! You like ${like} 😄`;
+      if (!interaction) {
+        throw lastError;
       }
     }
 
-    // USE MEMORY
-    // USE MEMORY + OPENAI
-    else {
-      const savedName = await Memory.findOne({
-        userId,
-        key: "name",
-      });
-
-      const savedLike = await Memory.findOne({
-        userId,
-        key: "like",
-      });
-
-      const memoryContext = `
-User name: ${savedName?.value?.[0] || ""}
-Likes: ${savedLike?.value?.join(", ") || ""}
-`;
-
-      try {
-        const completion = await client.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `You are a friendly AI assistant.
-
-Memory:
-${memoryContext}
-          `,
-            },
-            {
-              role: "user",
-              content: userMessage,
-            },
-          ],
-        });
-
-        aiReply = completion.choices[0].message.content;
-      } catch (error) {
-        console.log("OpenAI Error:", error.message);
-
-        // FALLBACK RESPONSE
-        if (savedName && savedLike) {
-          aiReply = `Hey ${savedName.value[0]}! I still remember you like ${savedLike.value.join(", ")} 😄`;
-        } else if (savedName) {
-          aiReply = `Hey ${savedName.value[0]}!`;
-        } else {
-          aiReply = "AI service is temporarily unavailable.";
-        }
-      }
-    }
-
+    // =========================
     // SAVE CHAT
+    // =========================
+
     const chat = new Chat({
       userId,
       message: userMessage,
@@ -210,16 +464,29 @@ ${memoryContext}
 
     await chat.save();
 
-    res.json({ reply: aiReply });
+    res.json({
+      reply: aiReply,
+    });
   } catch (err) {
     console.log(err);
-    res.status(500).json({ error: "Server error" });
+
+    if (err.status === 429 || err.statusCode === 429) {
+      return res.status(429).json({
+        error: "AI service quota exceeded. Please try again later.",
+      });
+    }
+
+    res.status(500).json({
+      error: "Server error",
+    });
   }
 });
 
-app.get("/history", async (req, res) => {
+app.get("/history", auth, async (req, res) => {
   try {
-    const chats = await Chat.find().sort({ createdAt: 1 });
+    const chats = await Chat.find({
+      userId: req.user.userId,
+    }).sort({ createdAt: 1 });
 
     res.json(chats);
   } catch (err) {
@@ -228,18 +495,39 @@ app.get("/history", async (req, res) => {
   }
 });
 
-app.delete("/clear", async (req, res) => {
+app.delete("/clear", auth, async (req, res) => {
   try {
-    await Chat.deleteMany({});
+    await Chat.deleteMany({
+      userId: req.user.userId,
+    });
 
     res.json({
-      message: "Chat history cleared",
+      message: "Your chat history cleared",
     });
   } catch (error) {
     console.log(error);
 
     res.status(500).json({
       error: "Failed to clear chat",
+    });
+  }
+});
+
+// ADD CLEAR MEMORIES ROUTE HERE 👇
+app.delete("/clear-memories", auth, async (req, res) => {
+  try {
+    await Memory.deleteMany({
+      userId: req.user.userId,
+    });
+
+    res.json({
+      message: "All memories cleared successfully",
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Failed to clear memories",
     });
   }
 });

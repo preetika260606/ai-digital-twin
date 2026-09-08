@@ -1,16 +1,21 @@
-//This middleware will verify JWT tokens before protected routes run.
-//contains authentication logic separately.
-
 const jwt = require("jsonwebtoken");
 
-const auth = (req, res, next) => {//middleware function that will be used in protected routes
+const auth = (req, res, next) => {
   try {
+    const authHeader = req.header("Authorization");
 
-    const token = req.header("Authorization");
+    if (!authHeader) {
+      return res.status(401).json({
+        message: "Access denied",
+      });
+    }
+
+    // Remove "Bearer " from the token
+    const token = authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({
-        message: "Access denied"
+        message: "Token missing",
       });
     }
 
@@ -22,13 +27,12 @@ const auth = (req, res, next) => {//middleware function that will be used in pro
     req.user = verified;
 
     next();
-
   } catch (error) {
+    console.log("Auth Error:", error.message);
 
     res.status(401).json({
-      message: "Invalid token"
+      message: "Invalid token",
     });
-
   }
 };
 

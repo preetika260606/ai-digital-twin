@@ -1,39 +1,55 @@
-//login UI
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import axios from "axios";
 
-function Login() {
+function Signup() {
   const navigate = useNavigate();
+
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = async () => {
+  const handleSignup = async () => {
     try {
-      const response = await axios.post("http://localhost:3000/login", {
-        email,
-        password,
-      });
+      const response = await axios.post(
+        "http://localhost:3000/signup",
+        {
+          name,
+          email,
+          password,
+        }
+      );
 
-      localStorage.setItem("token", response.data.token);
+      console.log(response.data);
 
-      localStorage.setItem("user", JSON.stringify(response.data.user));
+      alert("Signup successful! Please login.");
 
-      navigate("/chat");
-
-      console.log("Login Response:", response.data);
-      console.log("Token:", response.data.token);
-      console.log("User:", response.data.user);
+      navigate("/");
     } catch (error) {
       console.log(error);
       console.log(error.response?.data);
+
+      alert(
+        error.response?.data?.message || "Signup failed"
+      );
     }
   };
 
   return (
     <div className="h-screen flex justify-center items-center bg-gray-100">
       <div className="bg-white p-8 rounded-xl shadow-lg w-96">
-        <h1 className="text-3xl font-bold mb-6 text-center">Login</h1>
+
+        <h1 className="text-3xl font-bold mb-6 text-center">
+          Signup
+        </h1>
+
+        <input
+          type="text"
+          placeholder="Name"
+          className="w-full border p-3 rounded-lg mb-4"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
 
         <input
           type="email"
@@ -52,24 +68,25 @@ function Login() {
         />
 
         <button
-          onClick={handleLogin}
+          onClick={handleSignup}
           className="w-full bg-black text-white p-3 rounded-lg"
         >
-          Login
+          Signup
         </button>
 
         <p className="text-center mt-4 text-sm">
-          Don't have an account?{" "}
+          Already have an account?{" "}
           <button
-            onClick={() => navigate("/signup")}
+            onClick={() => navigate("/")}
             className="font-bold underline"
           >
-            Signup
+            Login
           </button>
         </p>
+
       </div>
     </div>
   );
 }
 
-export default Login;
+export default Signup;
