@@ -17,23 +17,119 @@ const cors = require("cors");
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
-
-app.use(express.json());
-app.use(cors());
-
-/* =========================
-   CONNECT DB
-========================= */
-
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB Connected");
   })
-  .catch((err) => {
-    console.log("MongoDB Connection Error:", err.message);
+  .catch((error) => {
+    console.log("MongoDB Connection Error:", error.message);
+  });
+// =========================
+// EMBEDDING FUNCTION
+// =========================
+
+async function generateEmbedding(text) {
+  const response = await ai.models.embedContent({
+    model: "gemini-embedding-2",
+    contents: text,
+    config: {
+      outputDimensionality: 768,
+    },
   });
 
+  return response.embeddings[0].values;
+}
+
+app.use(express.json());
+app.use(cors());
+
+// =========================
+// COSINE SIMILARITY
+// =========================
+
+function cosineSimilarity(vectorA, vectorB) {
+  if (!vectorA || !vectorB || vectorA.length !== vectorB.length) {
+    return 0;
+  }
+
+  let dotProduct = 0;
+  let magnitudeA = 0;
+  let magnitudeB = 0;
+
+  for (let i = 0; i < vectorA.length; i++) {
+    dotProduct += vectorA[i] * vectorB[i];
+    magnitudeA += vectorA[i] * vectorA[i];
+    magnitudeB += vectorB[i] * vectorB[i];
+  }
+
+  if (magnitudeA === 0 || magnitudeB === 0) {
+    return 0;
+  }
+
+  return dotProduct / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB));
+}
+
+// =========================
+// GET RELEVANT MEMORIES
+// =========================
+
+async function getRelevantMemories(
+  userId,
+  userMessage,
+  limit = 5,
+  threshold = 0.6
+) {
+  const memories = await Memory.find({
+    userId,
+    embedding: { $exists: true, $ne: [] },
+  });
+
+  if (memories.length === 0) {
+    return [];
+  }
+
+  const queryEmbedding = await generateEmbedding(userMessage);
+
+  const scoredMemories = memories.map((memory) => {
+    const score = cosineSimilarity(
+      queryEmbedding,
+      memory.embedding
+    );
+
+    return {
+      memory,
+      score,
+    };
+  });
+
+  console.log(
+    "Memory similarity scores:",
+    scoredMemories.map((item) => ({
+      key: item.memory.key,
+      value: item.memory.value,
+      score: item.score,
+    }))
+  );
+
+  // Keep only memories that are sufficiently relevant
+  const relevantMemories = scoredMemories
+    .filter((item) => item.score >= threshold)
+    .sort((a, b) => b.score - a.score);
+
+  console.log(
+    "Relevant memories:",
+    relevantMemories.map((item) => ({
+      key: item.memory.key,
+      value: item.memory.value,
+      score: item.score,
+    }))
+  );
+
+  return relevantMemories
+    .slice(0, limit)
+    .map((item) => item.memory);
+}
 /* =========================
    CHAT SCHEMA
 ========================= */
@@ -68,6 +164,11 @@ const memorySchema = new mongoose.Schema(
     key: String,
 
     value: [String],
+
+    embedding: {
+      type: [Number],
+      default: [],
+    },
   },
   { timestamps: true },
 );
@@ -98,30 +199,6 @@ app.get("/memories", auth, async (req, res) => {
 
     res.status(500).json({
       error: "Failed to fetch memories",
-    });
-  }
-});
-app.delete("/memories/:id", auth, async (req, res) => {
-  try {
-    const memory = await Memory.findOneAndDelete({
-      _id: req.params.id,
-      userId: req.user.userId,
-    });
-
-    if (!memory) {
-      return res.status(404).json({
-        error: "Memory not found",
-      });
-    }
-
-    res.json({
-      message: "Memory deleted successfully",
-    });
-  } catch (error) {
-    console.log(error);
-
-    res.status(500).json({
-      error: "Failed to delete memory",
     });
   }
 });
@@ -243,16 +320,18 @@ app.post("/chat", auth, async (req, res) => {
       }
     } else {
       // =========================
-      // LOAD EXISTING MEMORIES
+      // SEMANTIC MEMORY RETRIEVAL
       // =========================
 
-      const memories = await Memory.find({
-        userId,
-      });
+      const memories = await getRelevantMemories(userId, userMessage, 5);
 
       const memoryContext = memories
         .map((memory) => `${memory.key}: ${memory.value.join(", ")}`)
         .join("\n");
+
+      // =========================
+      // GEMINI AI
+      // =========================
 
       let interaction;
       let lastError;
@@ -265,101 +344,87 @@ app.post("/chat", auth, async (req, res) => {
             input: `
 You are an AI Digital Twin.
 
-Your personality:
-- Be friendly, supportive, and natural.
-- Keep responses clear and easy to understand.
-- Adapt your response to the user's communication style.
-- Be encouraging when helping with learning or coding.
-- Do not sound overly formal or robotic.
-- Do not pretend to be the user.
-- Never claim to have experiences or actions that you do not actually have.
+Be friendly, helpful, natural, and clear.
 
-You have two tasks:
-
-1. Respond naturally and helpfully to the user's message.
-2. Extract important long-term personal information from the user's message.
-
-Here is what you already know about the user:
-
+Previous saved memories:
 ${memoryContext}
 
-Recent conversation history:
-
+Recent conversation:
 ${chatHistory}
 
-Use this conversation history to understand references and maintain continuity.
-
-Important:
-- Do not repeat questions the user has already answered.
-- Use previously saved memories naturally when relevant.
-- If the user corrects previously known information, prefer the newest information.
-- Do not mention that you are reading a database or memory system.
-- Respond as the user's AI Digital Twin.
-
 Current user message:
-
 ${userMessage}
 
-Return ONLY valid JSON in this format:
+Your tasks:
+
+1. Answer the user's current message naturally.
+2. Extract important long-term personal information from the user's message.
+
+Return ONLY valid JSON:
 
 {
-  "reply": "your response to the user",
+  "reply": "your response",
   "memories": [
     {
-      "key": "name",
-      "value": "Preetika"
-    },
-    {
-      "key": "location",
-      "value": "Kanpur"
+      "key": "example_key",
+      "value": "example value"
     }
   ]
 }
 
-If there is no important personal information to remember:
+If there is no useful personal information to remember:
 
 {
-  "reply": "your response to the user",
+  "reply": "your response",
   "memories": []
 }
 
 Rules:
 
-- Reply naturally like a friendly AI assistant.
-- Only remember long-term useful personal information.
-- Do not remember temporary information, questions, greetings, or general statements.
-- Remember facts about the user's identity, preferences, education, location, skills, hobbies, goals, or other long-term interests.
-- If the user corrects previously known information, return the corrected value.
-- Do not create a memory just because the user mentioned a topic.
-- Use lowercase snake_case for memory keys.
-- Keep memory values short and factual.
+- Only remember information explicitly stated by the user.
+- Do not guess personal information.
+- Remember useful long-term information.
+- Do not remember greetings or temporary information.
+- Do not use a predefined list of memory categories.
+- Create a new key when necessary.
+- Memory keys must use lowercase snake_case.
+- If the user corrects previous information, use the new information.
+- Answer the current user message directly.
 `,
 
             response_format: {
               type: "text",
               mime_type: "application/json",
+
               schema: {
                 type: "object",
+
                 properties: {
                   reply: {
                     type: "string",
                   },
+
                   memories: {
                     type: "array",
+
                     items: {
                       type: "object",
+
                       properties: {
                         key: {
                           type: "string",
                         },
+
                         value: {
                           type: "string",
                         },
                       },
+
                       required: ["key", "value"],
                     },
                   },
                 },
+
                 required: ["reply", "memories"],
               },
             },
@@ -369,27 +434,17 @@ Rules:
 
           aiReply = aiData.reply;
 
-          // Save memory if Gemini found something important
-          if (aiData.memories && aiData.memories.length > 0) {
-            const allowedMemoryKeys = [
-              "name",
-              "location",
-              "education",
-              "skills",
-              "hobbies",
-              "favorite_food",
-              "goals",
-              "interests",
-            ];
+          // =========================
+          // SAVE MEMORIES
+          // =========================
 
+          if (aiData.memories && aiData.memories.length > 0) {
             for (const memory of aiData.memories) {
               const key = memory.key?.toLowerCase().trim();
+
               const value = memory.value?.trim();
 
-              if (!key || !value) continue;
-
-              if (!allowedMemoryKeys.includes(key)) {
-                console.log("Memory rejected:", key);
+              if (!key || !value) {
                 continue;
               }
 
@@ -398,27 +453,73 @@ Rules:
                 key,
               });
 
+              // Memories where only the latest value
+              // should be stored
               const replaceKeys = [
                 "name",
                 "location",
                 "education",
                 "favorite_food",
+                "career_goal",
               ];
 
+              // =========================
+              // NEW MEMORY
+              // =========================
+
               if (!existingMemory) {
+                const memoryText = `${key}: ${value}`;
+
+                const embedding = await generateEmbedding(memoryText);
+
                 existingMemory = new Memory({
                   userId,
                   key,
                   value: [value],
+                  embedding,
                 });
-              } else {
-                if (replaceKeys.includes(key)) {
+
+                await existingMemory.save();
+
+                console.log("New memory saved:", key, value);
+
+                continue;
+              }
+
+              // =========================
+              // UPDATE EXISTING MEMORY
+              // =========================
+
+              let memoryChanged = false;
+
+              if (replaceKeys.includes(key)) {
+                if (existingMemory.value[0] !== value) {
                   existingMemory.value = [value];
+                  memoryChanged = true;
                 } else {
-                  if (!existingMemory.value.includes(value)) {
-                    existingMemory.value.push(value);
-                  }
+                  console.log("Duplicate memory ignored:", key, value);
+
+                  continue;
                 }
+              } else {
+                if (existingMemory.value.includes(value)) {
+                  console.log("Duplicate memory ignored:", key, value);
+
+                  continue;
+                }
+
+                existingMemory.value.push(value);
+                memoryChanged = true;
+              }
+
+              // =========================
+              // REGENERATE EMBEDDING
+              // =========================
+
+              if (memoryChanged) {
+                const memoryText = `${existingMemory.key}: ${existingMemory.value.join(", ")}`;
+
+                existingMemory.embedding = await generateEmbedding(memoryText);
               }
 
               await existingMemory.save();
@@ -427,42 +528,49 @@ Rules:
             }
           }
 
-          // Gemini succeeded, so stop retrying
+          // Gemini successful
           break;
         } catch (error) {
           lastError = error;
 
           console.log(`Gemini attempt ${attempt} failed:`, error.message);
 
-          // Do not retry quota errors
           if (error.status === 429 || error.statusCode === 429) {
             console.log("Gemini quota exceeded. Stopping retries.");
+
             break;
           }
 
-          // Retry temporary errors
           if (attempt < 3) {
             await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
           }
         }
       }
 
+      // =========================
+      // CHECK GEMINI RESULT
+      // =========================
+
       if (!interaction) {
         throw lastError;
       }
+
+      // =========================
+      // SAVE CHAT
+      // =========================
+
+      const chat = new Chat({
+        userId,
+        message: userMessage,
+        reply: aiReply,
+      });
+
+      await chat.save();
     }
 
     // =========================
-    // SAVE CHAT
+    // SEND RESPONSE
     // =========================
-
-    const chat = new Chat({
-      userId,
-      message: userMessage,
-      reply: aiReply,
-    });
-
-    await chat.save();
 
     res.json({
       reply: aiReply,
@@ -482,18 +590,9 @@ Rules:
   }
 });
 
-app.get("/history", auth, async (req, res) => {
-  try {
-    const chats = await Chat.find({
-      userId: req.user.userId,
-    }).sort({ createdAt: 1 });
-
-    res.json(chats);
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ error: "Failed to fetch history" });
-  }
-});
+// =========================
+// CLEAR CHAT
+// =========================
 
 app.delete("/clear", auth, async (req, res) => {
   try {
@@ -580,14 +679,6 @@ app.post("/signup", async (req, res) => {
 });
 
 /* =========================
-   SERVER
-========================= */
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-/* =========================
    Login route
 ========================= */
 
@@ -637,4 +728,12 @@ app.post("/login", async (req, res) => {
       message: "Server error",
     });
   }
+});
+
+/* =========================
+   SERVER
+========================= */
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
