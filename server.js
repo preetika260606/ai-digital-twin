@@ -78,7 +78,8 @@ async function getRelevantMemories(
   userId,
   userMessage,
   limit = 5,
-  threshold = 0.6
+  threshold = 0.7,
+  personalization = false,
 ) {
   const memories = await Memory.find({
     userId,
@@ -92,30 +93,44 @@ async function getRelevantMemories(
   const queryEmbedding = await generateEmbedding(userMessage);
 
   const scoredMemories = memories.map((memory) => {
-    const score = cosineSimilarity(
-      queryEmbedding,
-      memory.embedding
-    );
+    const similarity = cosineSimilarity(queryEmbedding, memory.embedding);
+
+    const importance = memory.importance ?? 0.5;
+
+    const score = similarity * 0.7 + importance * 0.3;
 
     return {
       memory,
+      similarity,
+      importance,
       score,
     };
   });
 
   console.log(
-    "Memory similarity scores:",
+    "Memory scores:",
     scoredMemories.map((item) => ({
       key: item.memory.key,
       value: item.memory.value,
-      score: item.score,
-    }))
+      similarity: item.similarity,
+      importance: item.importance,
+      finalScore: item.score,
+    })),
   );
 
   // Keep only memories that are sufficiently relevant
-  const relevantMemories = scoredMemories
-    .filter((item) => item.score >= threshold)
-    .sort((a, b) => b.score - a.score);
+  let relevantMemories;
+
+  if (personalization) {
+    relevantMemories = scoredMemories
+      .filter((item) => item.similarity >= 0.6)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 3);
+  } else {
+    relevantMemories = scoredMemories
+      .filter((item) => item.score >= threshold)
+      .sort((a, b) => b.score - a.score);
+  }
 
   console.log(
     "Relevant memories:",
@@ -123,12 +138,10 @@ async function getRelevantMemories(
       key: item.memory.key,
       value: item.memory.value,
       score: item.score,
-    }))
+    })),
   );
 
-  return relevantMemories
-    .slice(0, limit)
-    .map((item) => item.memory);
+  return relevantMemories.slice(0, limit).map((item) => item.memory);
 }
 /* =========================
    CHAT SCHEMA
@@ -156,19 +169,18 @@ const Chat = mongoose.model("Chat", chatSchema);
 
 const memorySchema = new mongoose.Schema(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     key: String,
-
     value: [String],
 
-    embedding: {
-      type: [Number],
-      default: [],
+    importance: {
+      type: Number,
+      default: 0.5,
+      min: 0,
+      max: 1,
     },
+
+    embedding: { type: [Number], default: [] },
   },
   { timestamps: true },
 );
@@ -237,18 +249,24 @@ app.put("/memories/:id", auth, async (req, res) => {
       });
     }
 
-    const memory = await Memory.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        userId: req.user.userId,
-      },
-      {
-        value: value,
-      },
-      {
-        new: true,
-      },
-    );
+    const memory = await Memory.findOne({
+      _id: req.params.id,
+      userId: req.user.userId,
+    });
+
+    if (!memory) {
+      return res.status(404).json({
+        error: "Memory not found",
+      });
+    }
+
+    memory.value = value;
+
+    const memoryText = `${memory.key}: ${memory.value.join(", ")}`;
+
+    memory.embedding = await generateEmbedding(memoryText);
+
+    await memory.save();
 
     if (!memory) {
       return res.status(404).json({
@@ -323,11 +341,38 @@ app.post("/chat", auth, async (req, res) => {
       // SEMANTIC MEMORY RETRIEVAL
       // =========================
 
-      const memories = await getRelevantMemories(userId, userMessage, 5);
+      const personalizationKeywords = [
+        "what should i",
+        "what should i eat",
+        "what should i choose",
+        "recommend",
+        "suggest",
+        "which should i",
+        "what do you think i should",
+        "for me",
+        "my preference",
+        "my favorite",
+      ];
 
-      const memoryContext = memories
-        .map((memory) => `${memory.key}: ${memory.value.join(", ")}`)
-        .join("\n");
+      const needsPersonalization = personalizationKeywords.some((keyword) =>
+        userMessage.toLowerCase().includes(keyword),
+      );
+
+      const memories = await getRelevantMemories(
+        userId,
+        userMessage,
+        5,
+        0.7,
+        needsPersonalization,
+      );
+
+      let memoryContext = "No relevant memories found.";
+
+      if (memories.length > 0) {
+        memoryContext = memories
+          .map((memory) => `- ${memory.key}: ${memory.value.join(", ")}`)
+          .join("\n");
+      }
 
       // =========================
       // GEMINI AI
@@ -344,10 +389,46 @@ app.post("/chat", auth, async (req, res) => {
             input: `
 You are an AI Digital Twin.
 
-Be friendly, helpful, natural, and clear.
+You are the user's personal AI assistant.
 
-Previous saved memories:
+Personality:
+- Be friendly, supportive, and natural.
+- Communicate like a helpful human, not like a robotic system.
+- Be clear and concise when the question is simple.
+- Give step-by-step explanations when the user is learning something.
+- When explaining technical topics, prefer beginner-friendly language.
+- Use examples when they make the explanation easier to understand.
+- Encourage the user when they are learning or solving problems.
+- Adapt your explanation to the user's level of understanding.
+- Do not unnecessarily use formal or complicated language.
+- Never invent personal information about the user.
+
+User adaptation:
+- Adapt the response to the user's apparent level of understanding.
+- When the user is learning a technical topic, explain the basics before advanced details when appropriate.
+- Use simple language and practical examples for beginners.
+- If the user asks for a deeper explanation, increase the level of detail.
+- If the user asks for a short answer, keep the response concise.
+- Use relevant memories to personalize the response only when they genuinely help answer the current question.
+- Never mention a personal memory just to make the response appear personalized.
+Relevant memories retrieved from the user's long-term memory:
+
 ${memoryContext}
+
+Memory usage rules:
+
+- Use a retrieved memory when it genuinely helps answer the user's current question.
+- Prefer memories that are directly related to the user's question or goal.
+- When a retrieved memory is directly relevant, actively use it to personalize the answer.
+- For recommendations, preferences, or personal advice, prefer the user's relevant stored preferences over generic suggestions.
+- If the user asks what they should choose, recommend an option based on their relevant preferences when possible.
+- Do not force unrelated memories into the response.
+- Do not mention unrelated personal information.
+- If multiple memories are relevant, combine them naturally when useful.
+- Never reveal the memory system, memory scores, embeddings, or retrieval process to the user.
+- Never assume a memory is relevant when the connection is weak.
+- Never invent additional personal information based on a memory.
+- Do not say that you know something about the user unless it is supported by a retrieved memory.
 
 Recent conversation:
 ${chatHistory}
@@ -367,7 +448,8 @@ Return ONLY valid JSON:
   "memories": [
     {
       "key": "example_key",
-      "value": "example value"
+      "value": "example value",
+      "importance": 0.8
     }
   ]
 }
@@ -390,6 +472,13 @@ Rules:
 - Memory keys must use lowercase snake_case.
 - If the user corrects previous information, use the new information.
 - Answer the current user message directly.
+- Assign an importance score between 0 and 1 to each memory.
+- 1 means extremely important and long-term.
+- 0.5 means moderately important.
+- 0 means not important enough to remember.
+- Give higher importance to identity, education, career goals, long-term preferences, and major life goals.
+- Give lower importance to temporary or short-lived information.
+- Only save information that is useful for future conversations.
 `,
 
             response_format: {
@@ -411,16 +500,12 @@ Rules:
                       type: "object",
 
                       properties: {
-                        key: {
-                          type: "string",
-                        },
-
-                        value: {
-                          type: "string",
-                        },
+                        key: { type: "string" },
+                        value: { type: "string" },
+                        importance: { type: "number" },
                       },
 
-                      required: ["key", "value"],
+                      required: ["key", "value", "importance"],
                     },
                   },
                 },
@@ -441,12 +526,15 @@ Rules:
           if (aiData.memories && aiData.memories.length > 0) {
             for (const memory of aiData.memories) {
               const key = memory.key?.toLowerCase().trim();
-
               const value = memory.value?.trim();
+              const importance = Number(memory.importance);
 
-              if (!key || !value) {
-                continue;
-              }
+              if (!key || !value) continue;
+
+              const safeImportance = Math.min(
+                1,
+                Math.max(0, importance || 0.5),
+              );
 
               let existingMemory = await Memory.findOne({
                 userId,
@@ -476,6 +564,7 @@ Rules:
                   userId,
                   key,
                   value: [value],
+                  importance: safeImportance,
                   embedding,
                 });
 
@@ -495,20 +584,40 @@ Rules:
               if (replaceKeys.includes(key)) {
                 if (existingMemory.value[0] !== value) {
                   existingMemory.value = [value];
+                  existingMemory.importance = safeImportance;
                   memoryChanged = true;
                 } else {
-                  console.log("Duplicate memory ignored:", key, value);
+                  existingMemory.importance = safeImportance;
+
+                  await existingMemory.save();
+
+                  console.log(
+                    "Duplicate memory found, importance updated:",
+                    key,
+                    value,
+                    safeImportance,
+                  );
 
                   continue;
                 }
               } else {
                 if (existingMemory.value.includes(value)) {
-                  console.log("Duplicate memory ignored:", key, value);
+                  existingMemory.importance = safeImportance;
+
+                  await existingMemory.save();
+
+                  console.log(
+                    "Duplicate memory found, importance updated:",
+                    key,
+                    value,
+                    safeImportance,
+                  );
 
                   continue;
                 }
 
                 existingMemory.value.push(value);
+                existingMemory.importance = safeImportance;
                 memoryChanged = true;
               }
 
