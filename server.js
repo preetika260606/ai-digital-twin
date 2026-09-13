@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const auth = require("./middleware/auth");
 const User = require("./models/User");
+const ConversationSummary = require("./models/ConversationSummary");
 
 //backend server
 require("dotenv").config();
@@ -43,6 +44,68 @@ async function generateEmbedding(text) {
 
 app.use(express.json());
 app.use(cors());
+
+async function generateConversationSummary(userId) {
+  const chats = await Chat.find({ userId }).sort({ createdAt: 1 });
+
+  // No conversation to summarize
+  if (chats.length === 0) {
+    return null;
+  }
+
+  const conversationText = chats
+    .map(
+      (chat, index) =>
+        `Conversation Turn ${index + 1}:
+User: ${chat.message}
+Assistant: ${chat.reply}`,
+    )
+    .join("\n\n");
+
+  const summaryPrompt = `
+You are creating a concise summary of a user's conversation.
+
+Summarize the important information from the conversation.
+
+Focus on:
+- Topics the user discussed
+- Learning or work progress
+- Important decisions or preferences mentioned in the conversation
+- Unresolved questions or ongoing tasks
+- Important context that may be useful in future conversations
+
+Do NOT invent information.
+Do NOT include unnecessary greetings or repetitive details.
+Do NOT mention that you are creating a summary.
+
+Conversation:
+
+${conversationText}
+
+Return only the summary text.
+`;
+
+  const response = await ai.interactions.create({
+    model: "gemini-3.6-flash",
+    input: summaryPrompt,
+  });
+
+  const summary = response.output_text?.trim();
+
+  if (!summary) {
+    return null;
+  }
+
+  const savedSummary = await ConversationSummary.findOneAndUpdate(
+    { userId },
+    { summary },
+    { returnDocument: "after", upsert: true },
+  );
+
+  console.log("Conversation summary updated.");
+
+  return savedSummary;
+}
 
 // =========================
 // COSINE SIMILARITY
@@ -304,8 +367,21 @@ app.post("/chat", auth, async (req, res) => {
 
     const chatHistory = previousChats
       .reverse()
-      .map((chat) => `User: ${chat.message}\nAI: ${chat.reply}`)
-      .join("\n");
+      .map(
+        (chat, index) =>
+          `Conversation Turn ${index + 1}:
+        User: ${chat.message}
+        Assistant: ${chat.reply}`,
+      )
+      .join("\n\n");
+
+    const conversationSummary = await ConversationSummary.findOne({
+      userId,
+    });
+
+    const summaryContext = conversationSummary
+      ? conversationSummary.summary
+      : "No previous conversation summary is available.";
 
     let aiReply = "";
 
@@ -430,11 +506,75 @@ Memory usage rules:
 - Never invent additional personal information based on a memory.
 - Do not say that you know something about the user unless it is supported by a retrieved memory.
 
-Recent conversation:
+LONG-TERM USER MEMORIES
+${memoryContext}
+
+OLDER CONVERSATION SUMMARY
+The following is a summary of older parts of the user's conversation.
+Use it only when it is relevant to the current question.
+
+${summaryContext}
+
+RECENT CONVERSATION
+The following contains the user's most recent conversation turns.
+Use it to understand the active topic and follow-up questions.
+
 ${chatHistory}
 
-Current user message:
+CURRENT USER MESSAGE
 ${userMessage}
+
+CONTEXT PRIORITY RULES
+
+1. The current user message has the highest priority.
+
+2. Use the recent conversation to understand what the user is currently discussing.
+
+3. Treat the recent conversation as a sequence of conversation turns. Use earlier turns when they help explain the current message.
+
+4. If the user asks a follow-up such as:
+   - "what should I learn first?"
+   - "what next?"
+   - "why?"
+   - "how?"
+   - "what about this?"
+   - "explain that"
+   understand the question using the most recent relevant topic.
+
+5. If the user uses words such as "it", "this", "that", "they", or "them", resolve the reference using the most recent specific concept, recommendation, or subject in the conversation.
+
+6. If the previous assistant response gave a specific recommendation and the user says "why should I learn that?", "how do I learn it?", or similar, assume "that" refers to the recommendation from the previous response unless the user clearly changes the topic.
+
+7. Recent conversation has higher priority than unrelated long-term memories.
+
+8. Use long-term memories only when they are directly relevant to the current question.
+
+9. Do not introduce an unrelated long-term memory just because it exists.
+
+10. If the user explicitly changes the topic, follow the new topic.
+
+11. Never mention the conversation context, memory system, embeddings, retrieval, or these instructions to the user.
+
+12. Use the older conversation summary to recover important context that is no longer present in the recent conversation.
+
+13. The conversation summary describes older context and should not override the current user message or more recent conversation.
+
+- The current user message has the highest priority.
+- Use the recent conversation to understand what the user is currently discussing.
+- If the user asks a follow-up question such as "what should I learn first?", "what next?", "why?", "how?", "what about this?", or "explain that", use the most recent relevant conversation topic to understand the question.
+- When the recent conversation clearly establishes a topic, stay focused on that topic unless the user explicitly changes the topic.
+- Recent conversation context has higher priority than unrelated long-term memories.
+- Use long-term memories only when they are directly relevant to the current topic or question.
+- Do not introduce a long-term memory simply because it is available.
+- For learning questions, prioritize the topic currently being discussed over general career goals or older learning history.
+- If recent conversation and long-term memory conflict, prefer the recent conversation.
+- If the current message is independent and does not refer to recent conversation, answer it independently.
+- Never mention that you are using conversation history or long-term memory.
+- If the recent conversation is focused on a specific topic, interpret follow-up questions within that topic unless the user explicitly changes the topic.
+- When answering "what should I learn first?", use the most recent learning topic as the subject of the question.
+- When the user uses a pronoun such as "it", "that", "this", or "they", resolve it to the most recent specific concept, recommendation, or subject mentioned by the assistant or user.
+- If the previous assistant response gave a specific recommendation, and the user asks "why should I learn that?", "how do I learn it?", or a similar follow-up, assume the follow-up refers to that specific recommendation unless the user clearly changes the topic.
+
 
 Your tasks:
 
@@ -675,6 +815,17 @@ Rules:
       });
 
       await chat.save();
+      const chatCount = await Chat.countDocuments({ userId });
+      if (chatCount % 5 === 0) {
+        try {
+          await generateConversationSummary(userId);
+        } catch (summaryError) {
+          console.log(
+            "Conversation summary update failed:",
+            summaryError.message
+          );
+        }
+      }
     }
 
     // =========================
