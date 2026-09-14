@@ -46,14 +46,24 @@ app.use(express.json());
 app.use(cors());
 
 async function generateConversationSummary(userId) {
-  const chats = await Chat.find({ userId }).sort({ createdAt: 1 });
+  // Get the existing summary
+  const existingSummary = await ConversationSummary.findOne({
+    userId,
+  });
 
-  // No conversation to summarize
-  if (chats.length === 0) {
+  // Get only the latest 5 conversations
+  const recentChats = await Chat.find({
+    userId,
+  })
+    .sort({ createdAt: -1 })
+    .limit(5);
+
+  if (recentChats.length === 0) {
     return null;
   }
 
-  const conversationText = chats
+  const recentConversationText = recentChats
+    .reverse()
     .map(
       (chat, index) =>
         `Conversation Turn ${index + 1}:
@@ -62,27 +72,38 @@ Assistant: ${chat.reply}`,
     )
     .join("\n\n");
 
-  const summaryPrompt = `
-You are creating a concise summary of a user's conversation.
+  const previousSummary = existingSummary
+    ? existingSummary.summary
+    : "No previous conversation summary exists.";
 
-Summarize the important information from the conversation.
+  const summaryPrompt = `
+You are maintaining a concise long-term summary of a user's conversation.
+
+Previous conversation summary:
+${previousSummary}
+
+New recent conversations:
+${recentConversationText}
+
+Update the previous summary using the new conversations.
+
+Keep only information that may be useful in future conversations.
 
 Focus on:
-- Topics the user discussed
+- Important topics discussed
 - Learning or work progress
-- Important decisions or preferences mentioned in the conversation
-- Unresolved questions or ongoing tasks
-- Important context that may be useful in future conversations
+- Important decisions
+- User preferences mentioned
+- Ongoing tasks
+- Unresolved questions
+- Important context for future conversations
 
-Do NOT invent information.
-Do NOT include unnecessary greetings or repetitive details.
-Do NOT mention that you are creating a summary.
-
-Conversation:
-
-${conversationText}
-
-Return only the summary text.
+Rules:
+- Do NOT invent information.
+- Do NOT include greetings.
+- Do NOT repeat information unnecessarily.
+- Keep the summary concise.
+- Return only the updated summary text.
 `;
 
   const response = await ai.interactions.create({
@@ -99,14 +120,16 @@ Return only the summary text.
   const savedSummary = await ConversationSummary.findOneAndUpdate(
     { userId },
     { summary },
-    { returnDocument: "after", upsert: true },
+    {
+      returnDocument: "after",
+      upsert: true,
+    },
   );
 
   console.log("Conversation summary updated.");
 
   return savedSummary;
 }
-
 // =========================
 // COSINE SIMILARITY
 // =========================
@@ -352,7 +375,15 @@ app.put("/memories/:id", auth, async (req, res) => {
 
 app.post("/chat", auth, async (req, res) => {
   try {
-    const userMessage = req.body.message;
+    const { message } = req.body;
+
+    if (!message || typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({
+        error: "Message is required.",
+      });
+    }
+
+    const userMessage = message.trim();
     const userId = req.user.userId;
 
     // =========================
@@ -816,13 +847,13 @@ Rules:
 
       await chat.save();
       const chatCount = await Chat.countDocuments({ userId });
-      if (chatCount % 5 === 0) {
+      if (chatCount % 10 === 0) {
         try {
           await generateConversationSummary(userId);
         } catch (summaryError) {
           console.log(
             "Conversation summary update failed:",
-            summaryError.message
+            summaryError.message,
           );
         }
       }

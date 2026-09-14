@@ -148,7 +148,7 @@ function Chat() {
           ...prev,
           {
             sender: "ai",
-            text: data.message || "Something went wrong.",
+            text: data.error || "Something went wrong.",
           },
         ]);
 
