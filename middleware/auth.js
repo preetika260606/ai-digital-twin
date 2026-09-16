@@ -10,12 +10,11 @@ const auth = (req, res, next) => {
       });
     }
 
-    // Remove "Bearer " from the token
-    const token = authHeader.split(" ")[1];
+    const [scheme, token] = authHeader.split(" ");
 
-    if (!token) {
+    if (scheme !== "Bearer" || !token) {
       return res.status(401).json({
-        message: "Token missing",
+        message: "Invalid authorization format",
       });
     }
 
@@ -30,7 +29,7 @@ const auth = (req, res, next) => {
   } catch (error) {
     console.log("Auth Error:", error.message);
 
-    res.status(401).json({
+    return res.status(401).json({
       message: "Invalid token",
     });
   }

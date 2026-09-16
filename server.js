@@ -1,19 +1,23 @@
+require("dotenv").config();
+if (!process.env.JWT_SECRET) {
+  console.error("JWT_SECRET is missing in .env");
+  process.exit(1);
+}
 const bcrypt = require("bcryptjs");
 const auth = require("./middleware/auth");
 const User = require("./models/User");
 const ConversationSummary = require("./models/ConversationSummary");
 
 //backend server
-require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const { GoogleGenAI } = require("@google/genai");
 const jwt = require("jsonwebtoken");
+const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const PORT = 3000;
-
-const cors = require("cors");
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -22,9 +26,14 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB Connected");
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
   })
   .catch((error) => {
-    console.log("MongoDB Connection Error:", error.message);
+    console.error("MongoDB Connection Error:", error.message);
+    process.exit(1);
   });
 // =========================
 // EMBEDDING FUNCTION
@@ -42,8 +51,22 @@ async function generateEmbedding(text) {
   return response.embeddings[0].values;
 }
 
-app.use(express.json());
-app.use(cors());
+app.use(express.json({ limit: "100kb" }));
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+  }),
+);
+
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  limit: 10, // maximum 10 requests per minute
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Too many chat requests. Please try again later.",
+  },
+});
 
 async function generateConversationSummary(userId) {
   // Get the existing summary
@@ -285,6 +308,10 @@ app.get("/", (req, res) => {
 // GET ALL MEMORIES
 // =========================
 
+// =========================
+// GET ALL MEMORIES
+// =========================
+
 app.get("/memories", auth, async (req, res) => {
   try {
     const memories = await Memory.find({
@@ -300,6 +327,27 @@ app.get("/memories", auth, async (req, res) => {
     });
   }
 });
+
+// =========================
+// GET CHAT HISTORY
+// =========================
+
+app.get("/history", auth, async (req, res) => {
+  try {
+    const history = await Chat.find({
+      userId: req.user.userId,
+    }).sort({ createdAt: 1 });
+
+    res.json(history);
+  } catch (error) {
+    console.error("History Error:", error.message);
+
+    res.status(500).json({
+      error: "Failed to load chat history",
+    });
+  }
+});
+
 app.delete("/memories/:id", auth, async (req, res) => {
   try {
     const memory = await Memory.findOneAndDelete({
@@ -328,6 +376,23 @@ app.delete("/memories/:id", auth, async (req, res) => {
 app.put("/memories/:id", auth, async (req, res) => {
   try {
     const { value } = req.body;
+
+    if (!Array.isArray(value) || value.length === 0) {
+      return res.status(400).json({
+        error: "Memory value must be a non-empty array.",
+      });
+    }
+    if (value.length > 20) {
+      return res.status(400).json({
+        error: "Memory can contain a maximum of 20 values.",
+      });
+    }
+
+    if (value.some((item) => typeof item !== "string" || item.length > 500)) {
+      return res.status(400).json({
+        error: "Each memory value must be a string of at most 500 characters.",
+      });
+    }
 
     if (!value || !Array.isArray(value)) {
       return res.status(400).json({
@@ -373,7 +438,7 @@ app.put("/memories/:id", auth, async (req, res) => {
   }
 });
 
-app.post("/chat", auth, async (req, res) => {
+app.post("/chat", auth, chatLimiter, async (req, res) => {
   try {
     const { message } = req.body;
 
@@ -384,6 +449,12 @@ app.post("/chat", auth, async (req, res) => {
     }
 
     const userMessage = message.trim();
+
+    if (userMessage.length > 5000) {
+      return res.status(400).json({
+        error: "Message is too long. Maximum length is 5000 characters.",
+      });
+    }
     const userId = req.user.userId;
 
     // =========================
@@ -930,9 +1001,22 @@ app.post("/signup", async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
+    if (
+      !name ||
+      typeof name !== "string" ||
+      !email ||
+      typeof email !== "string" ||
+      !password ||
+      typeof password !== "string"
+    ) {
       return res.status(400).json({
-        message: "All fields are required",
+        error: "Name, email and password are required.",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: "Password must be at least 6 characters long.",
       });
     }
 
@@ -976,6 +1060,18 @@ app.post("/signup", async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // Validate login input
+    if (
+      !email ||
+      typeof email !== "string" ||
+      !password ||
+      typeof password !== "string"
+    ) {
+      return res.status(400).json({
+        error: "Email and password are required.",
+      });
+    }
 
     const user = await User.findOne({ email });
 
@@ -1021,10 +1117,26 @@ app.post("/login", async (req, res) => {
   }
 });
 
-/* =========================
-   SERVER
-========================= */
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Route not found",
+  });
+});
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err);
+
+  // Invalid JSON sent by client
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({
+      error: "Invalid JSON body.",
+    });
+  }
+
+  // Generic server error
+  res.status(err.status || 500).json({
+    error:
+      err.status && err.status < 500 ? err.message : "Internal server error.",
+  });
 });

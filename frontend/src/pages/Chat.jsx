@@ -102,7 +102,7 @@ function Chat() {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      })
+      });
       alert("Memories cleared successfully!");
     } catch (error) {
       console.log(error);
