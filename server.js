@@ -15,6 +15,7 @@ const { GoogleGenAI } = require("@google/genai");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
 
 const app = express();
 const PORT = 3000;
@@ -52,6 +53,8 @@ async function generateEmbedding(text) {
 }
 
 app.use(express.json({ limit: "100kb" }));
+app.use(helmet());
+
 app.use(
   cors({
     origin: "http://localhost:5173",
