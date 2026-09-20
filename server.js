@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs");
 const auth = require("./middleware/auth");
 const User = require("./models/User");
 const ConversationSummary = require("./models/ConversationSummary");
+const DeletedMemory = require("./models/DeletedMemory");
 
 //backend server
 const express = require("express");
@@ -63,7 +64,7 @@ app.use(
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  limit: 10, // maximum 10 requests per minute
+  limit: 30, // maximum 30 requests per minute
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: {
@@ -353,7 +354,7 @@ app.get("/history", auth, async (req, res) => {
 
 app.delete("/memories/:id", auth, async (req, res) => {
   try {
-    const memory = await Memory.findOneAndDelete({
+    const memory = await Memory.findOne({
       _id: req.params.id,
       userId: req.user.userId,
     });
@@ -363,6 +364,16 @@ app.delete("/memories/:id", auth, async (req, res) => {
         error: "Memory not found",
       });
     }
+
+    // Save deleted memory so AI does not use it again
+    await DeletedMemory.create({
+      userId: req.user.userId,
+      key: memory.key,
+      value: memory.value.join(", "),
+    });
+
+    // Now delete the actual memory
+    await memory.deleteOne();
 
     res.json({
       message: "Memory deleted successfully",
@@ -488,6 +499,16 @@ app.post("/chat", auth, chatLimiter, async (req, res) => {
       ? conversationSummary.summary
       : "No previous conversation summary is available.";
 
+    const deletedMemories = await DeletedMemory.find({
+      userId,
+    });
+
+    const deletedMemoryContext =
+      deletedMemories.length > 0
+        ? deletedMemories
+            .map((memory) => `- ${memory.key}: ${memory.value}`)
+            .join("\n")
+        : "No deleted memories.";
     let aiReply = "";
 
     // =========================
@@ -614,6 +635,17 @@ Memory usage rules:
 LONG-TERM USER MEMORIES
 ${memoryContext}
 
+DELETED / FORGOTTEN INFORMATION
+The following information was explicitly deleted by the user.
+
+${deletedMemoryContext}
+
+IMPORTANT:
+- Treat all information listed above as forgotten.
+- NEVER use this information to answer the user's question.
+- Do not use it even if it appears in the conversation history or summary.
+- Treat it as unknown unless the user explicitly provides the information again.
+
 OLDER CONVERSATION SUMMARY
 The following is a summary of older parts of the user's conversation.
 Use it only when it is relevant to the current question.
@@ -679,7 +711,11 @@ CONTEXT PRIORITY RULES
 - When answering "what should I learn first?", use the most recent learning topic as the subject of the question.
 - When the user uses a pronoun such as "it", "that", "this", or "they", resolve it to the most recent specific concept, recommendation, or subject mentioned by the assistant or user.
 - If the previous assistant response gave a specific recommendation, and the user asks "why should I learn that?", "how do I learn it?", or a similar follow-up, assume the follow-up refers to that specific recommendation unless the user clearly changes the topic.
-
+- The user may explicitly delete information from their memories.
+- Treat every item listed under "DELETED / FORGOTTEN INFORMATION" as forgotten.
+- NEVER use deleted information to answer the user's question.
+- Ignore deleted information even if it appears in recent conversation history or the older conversation summary.
+- Treat deleted information as unknown unless the user explicitly provides that information again.
 
 Your tasks:
 

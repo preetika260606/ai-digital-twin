@@ -143,22 +143,34 @@ function Chat() {
       const data = await response.json();
 
       // Backend returned an error
-      if (!response.ok) {
-        console.log("Chat API Error:", data);
+     if (!response.ok) {
+  console.log("Chat API Error:", data);
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            sender: "ai",
-            text: `⚠️ ${
-              data.error || "Something went wrong. Please try again."
-            }`,
-            isError: true,
-          },
-        ]);
+  let errorMessage = "Something went wrong. Please try again.";
 
-        return;
-      }
+  if (response.status === 400) {
+    errorMessage = "⚠️ Invalid message. Please check your input and try again.";
+  } else if (response.status === 401) {
+    errorMessage = "⚠️ Your session has expired. Please log in again.";
+  } else if (response.status === 429) {
+    errorMessage =
+      "⚠️ Too many requests. Please wait a moment and try again.";
+  } else if (response.status >= 500) {
+    errorMessage =
+      "⚠️ The server is temporarily unavailable. Please try again shortly.";
+  }
+
+  setMessages((prev) => [
+    ...prev,
+    {
+      sender: "ai",
+      text: errorMessage,
+      isError: true,
+    },
+  ]);
+
+  return;
+}
 
       // Successful AI response
       setMessages((prev) => [
@@ -248,218 +260,192 @@ function Chat() {
 
       {/* CHAT AREA */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-        {/* EMPTY / WELCOME SCREEN */}
-        {messages.length === 0 && (
-          <div className="h-full flex items-center justify-center px-4 py-10">
-            <div className="text-center max-w-2xl w-full">
-              {/* AI ICON */}
-              <div
-                className="w-20 h-20 bg-black text-white rounded-3xl
-                   flex items-center justify-center
-                   text-4xl mx-auto mb-6
-                   shadow-lg"
-              >
-                🧠
-              </div>
+{messages.length === 0 ? (
+  /* EMPTY / WELCOME SCREEN */
+  <div className="flex flex-col items-center justify-center text-center min-h-[60vh] px-4">
 
-              {/* TITLE */}
-              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
-                How can I help you today?
-              </h2>
+    {/* AI ICON */}
+    <div
+      className="w-16 h-16 rounded-full
+                 bg-black text-white
+                 flex items-center justify-center
+                 text-2xl
+                 shadow-md
+                 mb-5"
+    >
+      🧠
+    </div>
 
-              {/* DESCRIPTION */}
-              <p
-                className="text-gray-500 text-sm sm:text-base
-                    max-w-xl mx-auto mb-8 leading-relaxed"
-              >
-                I'm your AI Digital Twin. I can remember your preferences,
-                understand your conversations, and give personalized responses.
-              </p>
+    {/* WELCOME TEXT */}
+    <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-2">
+      Welcome, {user?.name || "there"} 👋
+    </h1>
 
-              {/* FEATURE CARDS */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* CHAT CARD */}
-                <div
-                  className="bg-white border border-gray-200 rounded-2xl
-                     p-5 text-left
-                     hover:shadow-md hover:-translate-y-1
-                     transition duration-200"
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl bg-gray-100
-                          flex items-center justify-center
-                          text-lg mb-4"
-                  >
-                    💬
-                  </div>
+    <p className="text-gray-500 max-w-md text-sm sm:text-base leading-relaxed">
+      I'm your AI Digital Twin. Start a conversation and I'll learn
+      from your preferences, goals, and interests.
+    </p>
 
-                  <h3 className="font-semibold text-gray-900 mb-1">Chat</h3>
+    {/* SUGGESTION CARDS */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 w-full max-w-xl">
 
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    Ask questions and have a natural conversation.
-                  </p>
-                </div>
+      <button
+        onClick={() => setInput("What do you remember about me?")}
+        className="text-left bg-white border border-gray-200
+                   rounded-xl px-4 py-3
+                   hover:border-gray-400
+                   hover:shadow-sm
+                   transition"
+      >
+        <p className="font-medium text-gray-800 text-sm">
+          🧠 What do you remember about me?
+        </p>
 
-                {/* MEMORY CARD */}
-                <div
-                  className="bg-white border border-gray-200 rounded-2xl
-                     p-5 text-left
-                     hover:shadow-md hover:-translate-y-1
-                     transition duration-200"
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl bg-gray-100
-                          flex items-center justify-center
-                          text-lg mb-4"
-                  >
-                    🧠
-                  </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Check your saved memories
+        </p>
+      </button>
 
-                  <h3 className="font-semibold text-gray-900 mb-1">Memory</h3>
+      <button
+        onClick={() => setInput("Help me achieve my career goal")}
+        className="text-left bg-white border border-gray-200
+                   rounded-xl px-4 py-3
+                   hover:border-gray-400
+                   hover:shadow-sm
+                   transition"
+      >
+        <p className="font-medium text-gray-800 text-sm">
+          🎯 Help me achieve my career goal
+        </p>
 
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    Your important preferences and information can be
-                    remembered.
-                  </p>
-                </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Get personalized guidance
+        </p>
+      </button>
 
-                {/* PERSONALIZED CARD */}
-                <div
-                  className="bg-white border border-gray-200 rounded-2xl
-                     p-5 text-left
-                     hover:shadow-md hover:-translate-y-1
-                     transition duration-200"
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl bg-gray-100
-                          flex items-center justify-center
-                          text-lg mb-4"
-                  >
-                    ✨
-                  </div>
+    </div>
+  </div>
+) : (
+  /* MESSAGES */
+  <div>
+    {messages.map((msg, index) => (
+      <div
+        key={index}
+        className={`flex items-end gap-3 mb-5 ${
+          msg.sender === "user" ? "justify-end" : "justify-start"
+        }`}
+      >
 
-                  <h3 className="font-semibold text-gray-900 mb-1">
-                    Personalized
-                  </h3>
-
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    Get responses based on your conversation and memories.
-                  </p>
-                </div>
-              </div>
-
-              {/* SMALL HINT */}
-              <p className="text-xs text-gray-400 mt-8">
-                Start by saying something like "Tell me about myself"
-              </p>
-            </div>
+        {/* AI AVATAR */}
+        {msg.sender === "ai" && (
+          <div
+            className="w-9 h-9 rounded-full
+                       bg-black text-white
+                       flex items-center justify-center
+                       text-sm shrink-0
+                       shadow-sm"
+          >
+            🧠
           </div>
         )}
-        {/* MESSAGES */}
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex items-end gap-3 mb-6 ${
-              msg.sender === "user" ? "justify-end" : "justify-start"
-            }`}
+
+        {/* MESSAGE BUBBLE */}
+        <div
+          className={`max-w-[85%] sm:max-w-[75%]
+                      px-5 py-3.5
+                      rounded-2xl
+                      shadow-sm
+                      break-words
+                      leading-relaxed
+                      text-sm sm:text-base
+                      transition
+                      ${
+                        msg.sender === "user"
+                          ? "bg-black text-white rounded-br-md"
+                          : msg.isError
+                            ? "bg-red-50 text-red-700 border border-red-200 rounded-bl-md"
+                            : "bg-white text-gray-800 border border-gray-200 rounded-bl-md"
+                      }`}
+        >
+
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => (
+                <p className="mb-2 last:mb-0">
+                  {children}
+                </p>
+              ),
+
+              ul: ({ children }) => (
+                <ul className="list-disc ml-5 mb-3 space-y-1">
+                  {children}
+                </ul>
+              ),
+
+              ol: ({ children }) => (
+                <ol className="list-decimal ml-5 mb-3 space-y-1">
+                  {children}
+                </ol>
+              ),
+
+              li: ({ children }) => (
+                <li className="leading-relaxed">
+                  {children}
+                </li>
+              ),
+
+              strong: ({ children }) => (
+                <strong className="font-semibold">
+                  {children}
+                </strong>
+              ),
+
+              code: ({ children, className, ...props }) => (
+                <code
+                  className={`px-1.5 py-0.5 rounded text-sm ${
+                    msg.sender === "user"
+                      ? "bg-gray-800 text-gray-100"
+                      : "bg-gray-100 text-gray-800"
+                  } ${className || ""}`}
+                  {...props}
+                >
+                  {children}
+                </code>
+              ),
+
+              pre: ({ children }) => (
+                <pre
+                  className="bg-gray-900 text-gray-100
+                             p-4 rounded-xl
+                             overflow-x-auto
+                             my-3 text-sm"
+                >
+                  {children}
+                </pre>
+              ),
+            }}
           >
-            {/* AI AVATAR */}
-            {msg.sender === "ai" && (
-              <div
-                className="w-9 h-9 rounded-full bg-black text-white
-                   flex items-center justify-center
-                   text-sm shrink-0 shadow-sm"
-              >
-                🧠
-              </div>
-            )}
+            {msg.text}
+          </ReactMarkdown>
+        </div>
 
-            {/* MESSAGE */}
-            <div
-              className={`max-w-[75%] sm:max-w-[70%]
-    px-5 py-3.5
-    rounded-2xl
-    shadow-sm
-    break-words
-    leading-relaxed
-  ${
-    msg.sender === "user"
-      ? "bg-black text-white rounded-br-md"
-      : msg.isError
-        ? "bg-red-50 text-red-700 border border-red-200 rounded-bl-md"
-        : "bg-white text-gray-800 border border-gray-200 rounded-bl-md"
-  }`}
-            >
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => (
-                    <p className="mb-2 last:mb-0">{children}</p>
-                  ),
-
-                  ul: ({ children }) => (
-                    <ul className="list-disc ml-5 mb-3 space-y-1">
-                      {children}
-                    </ul>
-                  ),
-
-                  ol: ({ children }) => (
-                    <ol className="list-decimal ml-5 mb-3 space-y-1">
-                      {children}
-                    </ol>
-                  ),
-
-                  li: ({ children }) => (
-                    <li className="leading-relaxed">{children}</li>
-                  ),
-
-                  strong: ({ children }) => (
-                    <strong className="font-semibold">{children}</strong>
-                  ),
-
-                  code({ inline, className, children, ...props }) {
-                    return inline ? (
-                      <code
-                        className={`px-1.5 py-0.5 rounded text-sm ${
-                          msg.sender === "user"
-                            ? "bg-gray-800 text-gray-100"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
-                        {...props}
-                      >
-                        {children}
-                      </code>
-                    ) : (
-                      <pre
-                        className="bg-gray-900 text-gray-100
-                           p-4 rounded-xl
-                           overflow-x-auto
-                           my-3 text-sm"
-                      >
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      </pre>
-                    );
-                  },
-                }}
-              >
-                {msg.text}
-              </ReactMarkdown>
-            </div>
-
-            {/* USER AVATAR */}
-            {msg.sender === "user" && (
-              <div
-                className="w-9 h-9 rounded-full
-                   bg-gray-200
-                   flex items-center justify-center
-                   text-sm shrink-0 shadow-sm"
-              >
-                👤
-              </div>
-            )}
+        {/* USER AVATAR */}
+        {msg.sender === "user" && (
+          <div
+            className="w-9 h-9 rounded-full
+                       bg-gray-200
+                       flex items-center justify-center
+                       text-sm shrink-0
+                       shadow-sm"
+          >
+            👤
           </div>
-        ))}
+        )}
+
+      </div>
+    ))}
+  </div>
+)}
 
         {/* TYPING INDICATOR */}
         {loading && <TypingIndicator />}
@@ -468,51 +454,57 @@ function Chat() {
       </div>
 
       {/* INPUT AREA */}
-      <div className="bg-white border-t border-gray-200 px-4 sm:px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          {/* INPUT BOX */}
-          <div
-            className="flex items-center gap-2
-                 bg-gray-50
+<div className="bg-white border-t border-gray-200 px-4 sm:px-6 py-4">
+
+  <div className="w-full max-w-4xl mx-auto">
+
+    {/* INPUT CONTAINER */}
+    <div
+      className="flex items-end gap-2
+                 bg-white
                  border border-gray-200
                  rounded-2xl
-                 p-2
                  shadow-sm
-                 focus-within:bg-white
-                 focus-within:border-gray-300
+                 px-2 py-2
+                 focus-within:border-gray-400
                  focus-within:shadow-md
                  transition"
-          >
-            {/* TEXT INPUT */}
-            <input
-              type="text"
-              placeholder="Message your AI Digital Twin..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !loading) {
-                  sendMessage();
-                }
-              }}
-              disabled={loading}
-              className="flex-1
+    >
+
+      {/* TEXT INPUT */}
+      <textarea
+        rows={1}
+        placeholder="Message your AI Digital Twin..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !loading) {
+            e.preventDefault();
+            sendMessage();
+          }
+        }}
+        disabled={loading}
+        className="flex-1
+                   resize-none
                    bg-transparent
                    px-4 py-3
                    outline-none
                    text-sm sm:text-base
                    text-gray-900
                    placeholder-gray-400
-                   disabled:cursor-not-allowed"
-            />
+                   disabled:cursor-not-allowed
+                   max-h-32"
+      />
 
-            {/* SEND BUTTON */}
-            <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              aria-label="Send message"
-              className={`w-11 h-11
+      {/* SEND BUTTON */}
+      <button
+        onClick={sendMessage}
+        disabled={loading || !input.trim()}
+        aria-label="Send message"
+        className={`w-11 h-11
                     rounded-xl
                     flex items-center justify-center
+                    shrink-0
                     font-semibold
                     text-lg
                     transition
@@ -521,19 +513,22 @@ function Chat() {
                         ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                         : "bg-black text-white hover:bg-gray-800 hover:scale-105 active:scale-95"
                     }`}
-            >
-              {loading ? "..." : "↑"}
-            </button>
-          </div>
+      >
+        {loading ? "..." : "↑"}
+      </button>
 
-          {/* HINT */}
-          <p className="text-center text-xs text-gray-400 mt-2">
-            Press Enter to send
-          </p>
-        </div>
-      </div>
+    </div>
+
+    {/* INPUT HINT */}
+    <p className="text-center text-xs text-gray-400 mt-2">
+      Press Enter to send • Shift + Enter for new line
+    </p>
+
+  </div>
+
+</div>
+
     </div>
   );
 }
-
 export default Chat; //this is the code
