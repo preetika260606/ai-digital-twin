@@ -1,201 +1,230 @@
-# 🤖 AI Digital Twin (Backend)
+AI Digital Twin
 
-A simple AI-like chat backend that remembers user information like name and preferences.
+An AI-powered personal chatbot that learns from user-provided information, remembers important details, and uses conversation context to give more personalized responses.
 
-Built step-by-step using:
+✨ Features
 
-* Node.js
-* Express.js
-* MongoDB (Mongoose)
-* React.js
-* Vite
-* Tailwind CSS
-* JWT
-* OpenAI API
+🔐 JWT-based authentication
 
----
+💬 AI-powered chat with Gemini
 
-## 🚀 Features
+🧠 Long-term memory system
 
-* Chat API (`/chat`)
-* Stores messages and replies
-* Remembers user name
-* Remembers user preferences (likes)
-* Context-based replies
-* User Signup & Login
-* JWT Authentication
-* Protected Routes
-* Chat History
-* Typing Indicator
-* OpenAI Integration
+🔎 Semantic memory retrieval using embeddings
 
----
+⭐ Memory importance scoring
 
-## 🧠 Example
+✏️ Edit and 🗑️ delete memories
 
-### Input:
+🧹 Deleted-memory protection
 
-```
-My name is Preetika
-```
+📝 Conversation summaries for older context
 
-### Output:
+🎯 Personalized responses based on user preferences
 
-```
-Nice to meet you, Preetika!
-```
+💾 Chat history
 
----
+📱 Responsive React UI
 
-### Input:
+🛡️ Input validation, rate limiting, Helmet and protected routes
 
-```
-I like coding
-```
+🛠️ Tech Stack
 
-### Output:
+Frontend: React, React Router, ReactMarkdown, CSS
+Backend: Node.js, Express.js, Mongoose
+Database: MongoDB
+AI: Google Gemini API
+Authentication: JWT, bcryptjs
+AI Memory: Gemini Embeddings + cosine similarity
 
-```
-Got it! You like coding 😄
-```
-
----
-
-### Input:
-
-```
-Hi
-```
-
-### Output:
-
-```
-Hey Preetika! I remember you like coding 😄
-```
-
----
-
-## 🛠️ Setup
-
-### 1. Clone repo
-
-```
-git clone https://github.com/YOUR_USERNAME/ai-digital-twin.git
-cd ai-digital-twin
-```
-
----
-
-### 2. Install dependencies
-
-```
-npm install
-```
-
----
-
-### 3. Create `.env` file
-
-```
-MONGO_URI=your_mongodb_connection_string
-```
-
----
-
-### 4. Run server
-
-```
-node server.js
-```
-
----
-
-## 🌐 API
-
-### POST `/chat`
-
-#### Request:
-
-```json
-{
-  "message": "Hello"
-}
-```
-
-#### Response:
-
-```json
-{
-  "reply": "Hello from AI"
-}
-```
-
----
-
-## 📦 Tech Stack
-
-* Node.js
-* Express.js
-* MongoDB Atlas
-* Mongoose
-
----
-
-## 🚀 Future Improvements
-
-* Multiple memory (array support)
-* User-specific memory
-* Retrieval Augmented Generation (RAG)
-* File upload support
-* Vector database integration
-* AI Digital Twin personality training
-* Chat history context
-* Frontend UI
-
----
-
-## Architecture
-
-User
-  ↓
-Frontend (React)
-  ↓
-Express Server
-  ↓
-MongoDB
-
----
-
-## Project Structure
+📂 Project Structure
 
 ai-digital-twin/
-│
-├── backend/
-│   ├── models/
-│   ├── routes/
-│   ├── controllers/
-│   └── server.js
-│
 ├── frontend/
-│   ├── src/
-│   └── public/
-│
+│   └── src/
+│       ├── components/
+│       └── pages/
+│           ├── Chat.jsx
+│           ├── Login.jsx
+│           ├── Signup.jsx
+│           └── Memories.jsx
+├── server.js
+├── .env.example
+├── .gitignore
+├── package.json
 └── README.md
 
----
+🚀 Getting Started
 
-## Screenshots
+1. Clone the repository
 
-### Chat Interface
+git clone https://github.com/preetika260606/ai-digital-twin.git
+cd ai-digital-twin
 
+2. Install backend dependencies
 
-![Chat UI](./screenshots/chat-ui.png)
+npm install
 
-### Login
+3. Configure environment variables
 
+Create a .env file in the project root:
 
-![Chat UI](./screenshots/LoginPage.png)
+MONGO_URI=your_mongodb_connection_string
+GEMINI_API_KEY=your_gemini_api_key
+JWT_SECRET=your_jwt_secret
 
-## 👩‍💻 Author
+4. Start the backend
+
+node server.js
+
+Backend:
+
+http://localhost:3000
+
+5. Start the frontend
+
+Open another terminal:
+
+cd frontend
+npm install
+npm run dev
+
+Frontend:
+
+http://localhost:5173
+
+🧠 How Memory Works
+
+The chatbot follows this flow:
+
+User Message
+     ↓
+Recent Chat History
+     ↓
+Semantic Memory Search
+     ↓
+Conversation Summary
+     ↓
+Gemini
+     ↓
+Personalized Response
+     ↓
+Memory Extraction & Storage
+
+User memories are converted into embeddings and matched with the current message using cosine similarity. Relevant memories are then added to the AI context.
+
+🔌 Main API Routes
+
+Method
+
+Endpoint
+
+Purpose
+
+POST
+
+/signup
+
+Create account
+
+POST
+
+/login
+
+Authenticate user
+
+POST
+
+/chat
+
+Send message to AI
+
+GET
+
+/history
+
+Get chat history
+
+DELETE
+
+/clear
+
+Clear chat history
+
+GET
+
+/memories
+
+Get user memories
+
+PUT
+
+/memories/:id
+
+Update memory
+
+DELETE
+
+/memories/:id
+
+Delete memory
+
+DELETE
+
+/clear-memories
+
+Clear stored memories
+
+🔒 Security
+
+Passwords are hashed using bcrypt
+
+JWT protects authenticated routes
+
+Environment secrets are excluded from Git
+
+Request validation is implemented
+
+/chat has rate limiting
+
+Helmet provides security-related HTTP headers
+
+Users can access only their own memories and chats
+
+🎯 Example
+
+User:
+
+My goal is to become a software engineer.
+
+Later:
+
+User:
+
+What should I focus on for my career?
+
+The chatbot can use the stored memory and conversation context to provide a more personalized response.
+
+📌 Future Improvements
+
+Production deployment
+
+Advanced vector database integration
+
+Streaming AI responses
+
+Voice interaction
+
+More advanced personality customization
+
+Analytics dashboard
+
+👩‍💻 Author
 
 Preetika Gupta
+
+GitHub: https://github.com/preetika260606
+
+LinkedIn: https://linkedin.com/in/preetika-gupta-a8613b314
+
+⭐ If you find this project useful, consider giving the repository a star.
