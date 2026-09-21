@@ -37,21 +37,29 @@ AI: Google Gemini API
 Authentication: JWT, bcryptjs
 AI Memory: Gemini Embeddings + cosine similarity
 
-📂 Project Structure
-
 ai-digital-twin/
+│
 ├── frontend/
-│   └── src/
-│       ├── components/
-│       └── pages/
-│           ├── Chat.jsx
-│           ├── Login.jsx
-│           ├── Signup.jsx
-│           └── Memories.jsx
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── TypingIndicator.jsx
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── Chat.jsx
+│   │   │   ├── Login.jsx
+│   │   │   ├── Signup.jsx
+│   │   │   └── Memories.jsx
+│   │   │
+│   │   ├── App.jsx
+│   │   └── main.jsx
+│   │
+│   ├── package.json
+│   └── ...
+│
 ├── server.js
+├── package.json
 ├── .env.example
 ├── .gitignore
-├── package.json
 └── README.md
 
 🚀 Getting Started
