@@ -1,71 +1,160 @@
-//login UI
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import axios from "axios";
 
 function Login() {
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    setErrorMessage("");
+
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage("Please enter your email and password.");
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      const response = await axios.post("http://localhost:3000/login", {
-        email,
-        password,
-      });
+      const response = await axios.post(
+        "http://localhost:3000/login",
+        {
+          email,
+          password,
+        },
+      );
 
       localStorage.setItem("token", response.data.token);
-
-      localStorage.setItem("user", JSON.stringify(response.data.user));
-
-      navigate("/chat");
+      localStorage.setItem(
+        "user",
+        JSON.stringify(response.data.user),
+      );
 
       console.log("Login Response:", response.data);
-      console.log("Token:", response.data.token);
-      console.log("User:", response.data.user);
+
+      navigate("/chat");
     } catch (error) {
-      console.log(error);
-      console.log(error.response?.data);
+      console.log("Login Error:", error);
+      console.log("Backend Error:", error.response?.data);
+
+      setErrorMessage(
+        error.response?.data?.error ||
+          "Invalid email or password.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="h-screen flex justify-center items-center bg-gray-100">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-96">
-        <h1 className="text-3xl font-bold mb-6 text-center">Login</h1>
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        {/* Branding */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white text-3xl shadow-lg mb-4">
+            🧠
+          </div>
 
-        <input
-          type="email"
-          placeholder="Email"
-          className="w-full border p-3 rounded-lg mb-4"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+          <h1 className="text-3xl font-bold text-white">
+            AI Digital Twin
+          </h1>
 
-        <input
-          type="password"
-          placeholder="Password"
-          className="w-full border p-3 rounded-lg mb-4"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <p className="text-gray-400 mt-2">
+            Your personalized AI assistant
+          </p>
+        </div>
 
-        <button
-          onClick={handleLogin}
-          className="w-full bg-black text-white p-3 rounded-lg"
-        >
-          Login
-        </button>
+        {/* Login Card */}
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">
+              Welcome back
+            </h2>
 
-        <p className="text-center mt-4 text-sm">
-          Don't have an account?{" "}
+            <p className="text-gray-500 text-sm mt-1">
+              Sign in to continue to your Digital Twin.
+            </p>
+          </div>
+
+          {/* Email */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Email
+            </label>
+
+            <input
+              type="email"
+              placeholder="Enter your email"
+              className="w-full border border-gray-300 px-4 py-3 rounded-xl outline-none transition focus:border-black focus:ring-2 focus:ring-gray-200"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setErrorMessage("");
+              }}
+            />
+          </div>
+
+          {/* Password */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password
+            </label>
+
+            <input
+              type="password"
+              placeholder="Enter your password"
+              className="w-full border border-gray-300 px-4 py-3 rounded-xl outline-none transition focus:border-black focus:ring-2 focus:ring-gray-200"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setErrorMessage("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleLogin();
+                }
+              }}
+            />
+          </div>
+
+          {/* Error */}
+          {errorMessage && (
+            <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+              <p className="text-red-600 text-sm text-center">
+                {errorMessage}
+              </p>
+            </div>
+          )}
+
+          {/* Login Button */}
           <button
-            onClick={() => navigate("/signup")}
-            className="font-bold underline"
+            onClick={handleLogin}
+            disabled={loading}
+            className="w-full bg-black text-white py-3 rounded-xl font-medium transition hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Signup
+            {loading ? "Signing in..." : "Login"}
           </button>
+
+          {/* Signup */}
+          <p className="text-center mt-6 text-sm text-gray-500">
+            Don't have an account?{" "}
+            <button
+              onClick={() => navigate("/signup")}
+              className="text-black font-semibold hover:underline"
+            >
+              Create an account
+            </button>
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="text-center text-gray-500 text-xs mt-6">
+          Your personalized AI experience starts here.
         </p>
       </div>
     </div>

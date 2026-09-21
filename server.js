@@ -134,7 +134,7 @@ Rules:
 `;
 
   const response = await ai.interactions.create({
-    model: "gemini-3.6-flash",
+    model: "gemini-3.5-flash-lite",
     input: summaryPrompt,
   });
 
@@ -509,6 +509,50 @@ app.post("/chat", auth, chatLimiter, async (req, res) => {
             .map((memory) => `- ${memory.key}: ${memory.value}`)
             .join("\n")
         : "No deleted memories.";
+
+    const safeChatHistory = removeDeletedInformation(
+      chatHistory,
+      deletedMemories,
+    );
+
+    const safeSummaryContext = removeDeletedInformation(
+      summaryContext,
+      deletedMemories,
+    );
+
+    function removeDeletedInformation(text, deletedMemories) {
+      let cleanedText = text || "";
+
+      for (const memory of deletedMemories) {
+        if (!memory.value) continue;
+
+        // Memory value can be an array or a string
+        const values = Array.isArray(memory.value)
+          ? memory.value
+          : [memory.value];
+
+        for (const value of values) {
+          if (!value || typeof value !== "string") continue;
+
+          const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+          const regex = new RegExp(escapedValue, "gi");
+
+          cleanedText = cleanedText.replace(regex, "[deleted information]");
+        }
+
+        // Also hide the deleted memory key if it appears in the context
+        if (memory.key) {
+          const escapedKey = memory.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+          const keyRegex = new RegExp(escapedKey, "gi");
+
+          cleanedText = cleanedText.replace(keyRegex, "[deleted memory]");
+        }
+      }
+
+      return cleanedText;
+    }
     let aiReply = "";
 
     // =========================
@@ -572,10 +616,16 @@ app.post("/chat", auth, chatLimiter, async (req, res) => {
 
       if (memories.length > 0) {
         memoryContext = memories
-          .map((memory) => `- ${memory.key}: ${memory.value.join(", ")}`)
+          .map((memory) => `-${memory.key}: ${memory.value.join(", ")}`)
           .join("\n");
-      }
 
+        // Extra protection:
+        // Never allow deleted information into memory context.
+        memoryContext = removeDeletedInformation(
+          memoryContext,
+          deletedMemories,
+        );
+      }
       // =========================
       // GEMINI AI
       // =========================
@@ -586,7 +636,7 @@ app.post("/chat", auth, chatLimiter, async (req, res) => {
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           interaction = await ai.interactions.create({
-            model: "gemini-3.6-flash",
+            model: "gemini-3.5-flash-lite",
 
             input: `
 You are an AI Digital Twin.
@@ -650,13 +700,13 @@ OLDER CONVERSATION SUMMARY
 The following is a summary of older parts of the user's conversation.
 Use it only when it is relevant to the current question.
 
-${summaryContext}
+${safeSummaryContext}
 
 RECENT CONVERSATION
 The following contains the user's most recent conversation turns.
 Use it to understand the active topic and follow-up questions.
 
-${chatHistory}
+${safeChatHistory}
 
 CURRENT USER MESSAGE
 ${userMessage}
@@ -1017,6 +1067,10 @@ app.delete("/clear", auth, async (req, res) => {
 app.delete("/clear-memories", auth, async (req, res) => {
   try {
     await Memory.deleteMany({
+      userId: req.user.userId,
+    });
+
+    await DeletedMemory.deleteMany({
       userId: req.user.userId,
     });
 
